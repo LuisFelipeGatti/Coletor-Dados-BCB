@@ -1,11 +1,14 @@
 import sqlite3
 from pathlib import Path
+import logging
+from datetime import date
 
+
+logger = logging.getLogger(__name__)
 
 CAMINHO_BANCO = Path(__file__).parent / "dados" / "bcb.db"
 
 def conectar():
-    """Abre (ou cria, se não existir) o arquivo do banco SQLite."""
     CAMINHO_BANCO.parent.mkdir(exist_ok=True)  # garante que a pasta exista
     conexao = sqlite3.connect(CAMINHO_BANCO)
     conexao.execute("PRAGMA foreign_keys = ON")
@@ -31,7 +34,7 @@ def criar_tabelas(conexao):
 def salvar_dados(conexao, df):
 
     if df.empty:
-        print("[AVISO] Nada para salvar.")
+        logger.warning("Nada para salvar.")
         return 0
 
     series = df[["codigo_serie", "serie"]].drop_duplicates()
@@ -55,8 +58,16 @@ def salvar_dados(conexao, df):
     )
 
     conexao.commit()  # confirma a gravação
-    print(f"{len(df)} registros gravados/atualizados em {CAMINHO_BANCO.name}.")
+    logger.info("%s registros gravados/atualizados em %s.", len(df), CAMINHO_BANCO.name)
     return len(df)
+
+
+def ultima_data(conexao, codigo):
+    """Devolve a data mais recente gravada para a série, ou None se não houver."""
+    resultado = conexao.execute(
+        "SELECT MAX(data) FROM observacoes WHERE codigo_serie = ?", (codigo,)
+    ).fetchone()[0]
+    return date.fromisoformat(resultado) if resultado else None
 
 
 def resumo_banco(conexao):
@@ -67,30 +78,10 @@ def resumo_banco(conexao):
         GROUP BY s.nome
         ORDER BY s.nome
     """
-    print("\n=== Conteúdo do banco ===")
+    logger.info("=== Conteúdo do banco ===")
     for nome, registros, primeira, ultima in conexao.execute(consulta):
-        print(f"{nome:<12} {registros:>6} registros  ({primeira} a {ultima})")
+        logger.info("%-12s %6s registros  (%s a %s)", nome, registros, primeira, ultima)
 
 
-if __name__ == "__main__":
-    from datetime import date
-    import pandas as pd
-    from coleta import SERIES, coletar_serie
-    from tratamento import tratar_serie
 
-    tabelas = []
-
-    for codigo, nome in SERIES.items():
-        registros = coletar_serie(codigo, date(2015, 1, 1), date.today())
-        tabelas.append(tratar_serie(registros, codigo, nome))
-    df_final = pd.concat(tabelas, ignore_index=True)
-
-    conexao = conectar()
-
-    try:
-        criar_tabelas(conexao)
-        salvar_dados(conexao, df_final)
-        resumo_banco(conexao)
-    finally:
-        conexao.close()
 

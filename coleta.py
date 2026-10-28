@@ -1,5 +1,9 @@
 from datetime import date, timedelta
 import requests
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 SERIES = {
     1: "dolar",
@@ -22,8 +26,7 @@ def dividir_periodo(data_inicial, data_final, anos_por_bloco=5):
     return blocos
 
 
-def coletar_bloco(codigo, data_inicial, data_final):
-    """Faz UMA requisição à API para um período de até 10 anos."""
+def coletar_bloco(codigo, data_inicial, data_final, tentativas=3):
     url = (
         f"{URL_BASE.format(codigo=codigo)}"
         f"?formato=json"
@@ -31,42 +34,46 @@ def coletar_bloco(codigo, data_inicial, data_final):
         f"&dataFinal={data_final:%d/%m/%Y}"
     )
 
-    try:
-        resposta = requests.get(url, timeout=30)
-        resposta.raise_for_status()  # gera erro se o status não for 2xx
-        return resposta.json()
+    for tentativa in range(1, tentativas + 1):
+        try:
+            resposta = requests.get(url, timeout=30)
+            resposta.raise_for_status()
+            return resposta.json()
 
-    except requests.exceptions.Timeout:
-        print(f"[ERRO] Série {codigo}: o servidor demorou demais para responder.")
-    except requests.exceptions.HTTPError:
-        print(f"[ERRO] Série {codigo}: a API respondeu com status {resposta.status_code}.")
-    except requests.exceptions.RequestException as erro:
-        print(f"[ERRO] Série {codigo}: falha de conexão ({erro}).")
-    except ValueError:
-        print(f"[ERRO] Série {codigo}: a resposta não veio em formato JSON.")
+        except requests.exceptions.Timeout:
+            print(f"[ERRO] Série {codigo}: o servidor demorou demais para responder.")
+        except requests.exceptions.HTTPError:
+            motivo = f"a API respondeu com status {resposta.status_code}"
+            if resposta.status_code < 500:
+                logger.error("Série %s: %s.", codigo, motivo)
+                return []
+        except requests.exceptions.RequestException as erro:
+            print(f"[ERRO] Série {codigo}: falha de conexão ({erro}).")
+        except ValueError:
+            print(f"[ERRO] Série {codigo}: a resposta não veio em formato JSON.")
 
-    return []  # em caso de erro, devolve lista vazia para o programa não parar
+        if tentativa < tentativas:
+            espera = 5 * tentativa  # 5s, depois 10s
+            logger.warning("Série %s: %s. Nova tentativa em %ss (%s/%s)...",
+                           codigo, motivo, espera, tentativa + 1, tentativas)
+            time.sleep(espera)
+        else:
+            logger.error("Série %s: %s. Desistindo após %s tentativas.",
+                         codigo, motivo, tentativas)
+
+    return []
 
 
 def coletar_serie(codigo, data_inicial, data_final):
-    """Coleta uma série inteira, dividindo o período em blocos se necessário."""
     registros = []
 
     for inicio, fim in dividir_periodo(data_inicial, data_final):
-        print(f"Coletando série {codigo} de {inicio:%d/%m/%Y} a {fim:%d/%m/%Y}...")
+        logger.info("Coletando série %s de %s a %s...",
+                    codigo, f"{inicio:%d/%m/%Y}", f"{fim:%d/%m/%Y}")
         registros.extend(coletar_bloco(codigo, inicio, fim))
 
-    print(f"Série {codigo}: {len(registros)} registros coletados.\n")
+    logger.info("Série %s: %s registros coletados.", codigo, len(registros))
     return registros
 
 
-if __name__ == "__main__":
-    inicio = date(2015, 1, 1)
-    fim = date.today()
-
-    for codigo, nome in SERIES.items():
-        dados = coletar_serie(codigo, inicio, fim)
-        if dados:
-            print(f"  {nome} - primeiro registro: {dados[0]}")
-            print(f"  {nome} - último registro:   {dados[-1]}\n")
 

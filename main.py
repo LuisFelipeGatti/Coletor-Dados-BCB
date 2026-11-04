@@ -8,13 +8,12 @@ from banco import conectar, criar_tabelas, resumo_banco, salvar_dados, ultima_da
 from coleta import SERIES, ColetaError, coletar_serie
 from tratamento import tratar_serie
 
-DATA_INICIAL = date(2015, 1, 1)  # início do histórico
-MARGEM_DIAS = 60                 # recoleta os últimos 60 dias para pegar revisões
+DATA_INICIAL = date(2015, 1, 1)
+MARGEM_DIAS = 60
 PASTA_LOGS = Path(__file__).parent / "logs"
 
 
 def configurar_logs():
-    """Envia as mensagens para a tela e para o arquivo logs/pipeline.log."""
     PASTA_LOGS.mkdir(exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
@@ -28,13 +27,12 @@ def configurar_logs():
 
 
 def definir_inicio(conexao, codigo, completo):
-    """Decide a partir de qual data coletar cada série."""
     if completo:
         return DATA_INICIAL
 
     ultima = ultima_data(conexao, codigo)
     if ultima is None:
-        return DATA_INICIAL  # banco vazio para esta série: coleta tudo
+        return DATA_INICIAL
 
     return max(DATA_INICIAL, ultima - timedelta(days=MARGEM_DIAS))
 

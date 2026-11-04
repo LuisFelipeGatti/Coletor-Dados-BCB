@@ -13,6 +13,9 @@ SERIES = {
 
 URL_BASE = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados"
 
+class ColetaError(Exception):
+    """Falha definitiva ao coletar dados da API, após todas as tentativas."""
+
 def dividir_periodo(data_inicial, data_final, anos_por_bloco=5):
     blocos = []
     inicio = data_inicial
@@ -34,6 +37,8 @@ def coletar_bloco(codigo, data_inicial, data_final, tentativas=3):
         f"&dataFinal={data_final:%d/%m/%Y}"
     )
 
+    motivo = "erro desconhecido"
+
     for tentativa in range(1, tentativas + 1):
         try:
             resposta = requests.get(url, timeout=30)
@@ -41,27 +46,28 @@ def coletar_bloco(codigo, data_inicial, data_final, tentativas=3):
             return resposta.json()
 
         except requests.exceptions.Timeout:
-            print(f"[ERRO] Série {codigo}: o servidor demorou demais para responder.")
+            motivo = "o servidor demorou demais para responder"
         except requests.exceptions.HTTPError:
             motivo = f"a API respondeu com status {resposta.status_code}"
-            if resposta.status_code < 500:
-                logger.error("Série %s: %s.", codigo, motivo)
+            if resposta.status_code == 404:
+                # A API responde 404 quando não há dados no período: não é erro.
+                logger.warning("Série %s: sem dados no período solicitado.", codigo)
                 return []
-        except requests.exceptions.RequestException as erro:
-            print(f"[ERRO] Série {codigo}: falha de conexão ({erro}).")
+            if resposta.status_code < 500:
+                # Outros erros 4xx não melhoram com novas tentativas.
+                raise ColetaError(f"Série {codigo}: {motivo}.")
         except ValueError:
-            print(f"[ERRO] Série {codigo}: a resposta não veio em formato JSON.")
+            motivo = "a resposta não veio em formato JSON"
+        except requests.exceptions.RequestException as erro:
+            motivo = f"falha de conexão ({erro})"
 
         if tentativa < tentativas:
             espera = 5 * tentativa  # 5s, depois 10s
             logger.warning("Série %s: %s. Nova tentativa em %ss (%s/%s)...",
                            codigo, motivo, espera, tentativa + 1, tentativas)
             time.sleep(espera)
-        else:
-            logger.error("Série %s: %s. Desistindo após %s tentativas.",
-                         codigo, motivo, tentativas)
 
-    return []
+    raise ColetaError(f"Série {codigo}: {motivo}. Desistindo após {tentativas} tentativas.")
 
 
 def coletar_serie(codigo, data_inicial, data_final):

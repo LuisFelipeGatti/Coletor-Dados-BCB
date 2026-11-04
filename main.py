@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from banco import conectar, criar_tabelas, resumo_banco, salvar_dados, ultima_data
-from coleta import SERIES, coletar_serie
+from coleta import SERIES, ColetaError, coletar_serie
 from tratamento import tratar_serie
 
 DATA_INICIAL = date(2015, 1, 1)  # início do histórico
@@ -53,7 +53,12 @@ def executar(completo=False):
 
         for codigo, nome in SERIES.items():
             inicio = definir_inicio(conexao, codigo, completo)
-            registros = coletar_serie(codigo, inicio, hoje)
+            try:
+                registros = coletar_serie(codigo, inicio, hoje)
+            except ColetaError as erro:
+                houve_falha = True
+                logger.error("%s Nada foi gravado para esta série.", erro)
+                continue
             df = tratar_serie(registros, codigo, nome)
 
             if df.empty:

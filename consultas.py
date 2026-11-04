@@ -6,7 +6,7 @@ import pandas as pd
 
 from banco import CAMINHO_BANCO
 
-ARQUIVO_SQL = Path(__file__).parent / "sql" / "perguntas.sql"
+ARQUIVO_SQL = Path(__file__).parent / "SQL" / "Perguntas.sql"
 
 
 def ler_perguntas(caminho):
